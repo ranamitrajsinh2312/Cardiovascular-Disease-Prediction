@@ -1,0 +1,364 @@
+"""
+Flask API for ML Cardio Disease Prediction
+Serves the trained ML models for predictions
+"""
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import joblib
+import numpy as np
+import pandas as pd
+import os
+from pathlib import Path
+
+app = Flask(__name__)
+CORS(app)
+
+# Load models and preprocessor
+BASE_DIR = Path(__file__).parent
+ARTIFACTS_DIR = BASE_DIR / "artifacts"
+
+try:
+    preprocessor = joblib.load(ARTIFACTS_DIR / "preprocessor.joblib")
+    rf_tuned_model = joblib.load(ARTIFACTS_DIR / "best_random_forest_tuned.joblib")
+    rf_baseline_model = joblib.load(ARTIFACTS_DIR / "random_forest_baseline.joblib")
+    lr_model = joblib.load(ARTIFACTS_DIR / "logistic_regression.joblib")
+    print("✓ All models loaded successfully")
+    print(f"  - RF Tuned: {type(rf_tuned_model)}")
+    print(f"  - RF Baseline: {type(rf_baseline_model)}")
+    print(f"  - Logistic Regression: {type(lr_model)}")
+except FileNotFoundError as e:
+    print(f"⚠ Error loading models: {e}")
+    preprocessor = None
+    rf_tuned_model = None
+    rf_baseline_model = None
+    lr_model = None
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'models_loaded': {
+            'rf_tuned': rf_tuned_model is not None,
+            'rf_baseline': rf_baseline_model is not None,
+            'logistic_regression': lr_model is not None
+        }
+    })
+
+
+@app.route('/api/models/info', methods=['GET'])
+def model_info():
+    """Get information about available models"""
+    return jsonify({
+        'models': [
+            {
+                'id': 'rf_tuned',
+                'name': 'Random Forest (Tuned)',
+                'accuracy': 0.732,
+                'roc_auc': 0.798,
+                'precision': 0.757,
+                'recall': 0.683,
+                'f1': 0.718,
+                'description': 'Hyperparameter-tuned Random Forest - Best Performance'
+            },
+            {
+                'id': 'rf_baseline',
+                'name': 'Random Forest (Baseline)',
+                'accuracy': 0.721,
+                'roc_auc': 0.783,
+                'precision': 0.732,
+                'recall': 0.697,
+                'f1': 0.714,
+                'description': 'Baseline Random Forest with default parameters'
+            },
+            {
+                'id': 'logistic_regression',
+                'name': 'Logistic Regression',
+                'accuracy': 0.724,
+                'roc_auc': 0.786,
+                'precision': 0.746,
+                'recall': 0.678,
+                'f1': 0.711,
+                'description': 'Fast and interpretable linear model'
+            }
+        ]
+    })
+
+
+@app.route('/api/predict', methods=['POST'])
+def predict():
+    """
+    Predict cardiovascular disease risk based on patient health data.
+    
+    INPUT:
+    - Patient health inputs: age (years), gender, height (cm), weight (kg), 
+      blood pressure (ap_hi/ap_lo), cholesterol, glucose, lifestyle factors
+    
+    PROCESSING:
+    1. Calculate BMI: weight (kg) / (height (m)²)
+    2. Preprocess data according to training dataset:
+       - Encode categorical values (gender, cholesterol, glucose, smoke, alco, active)
+       - Scale numeric features using StandardScaler
+       - Apply OneHotEncoder for categorical variables
+    3. Use trained Random Forest model to predict
+    4. Get prediction confidence using predict_proba
+    
+    OUTPUT:
+    - prediction: 0 (Disease Absent) or 1 (Disease Present)
+    - probability: {'no_disease': float, 'disease': float}
+    - risk_level: Low/Medium/High classification
+      * Low: probability < 40%
+      * Medium: probability 40-70%
+      * High: probability > 70%
+    - confidence: Confidence score as percentage
+    
+    Expected JSON format:
+    {
+        "model": "random_forest",
+        "features": {
+            "age_years": 45,
+            "weight": 70,
+            "height": 170,
+            "gender": 1,
+            "cholesterol": 1,
+            "gluc": 1,
+            "ap_hi": 120,
+            "ap_lo": 80,
+            "smoke": 0,
+            "alco": 0,
+            "active": 1,
+            "bmi": 24.2
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'features' not in data:
+            return jsonify({'error': 'Missing features in request'}), 400
+        
+        # Extract features
+        features = data.get('features')
+        model_choice = data.get('model', 'random_forest')
+        
+        # Define feature columns in the correct order (matching training data)
+        # Note: New preprocessor expects BMI as an input feature
+        age_in_years = int(features.get('age_years', 45))
+        age_in_days = age_in_years * 365  # Convert back to days as preprocessor expects
+        
+        # Calculate BMI (required by new preprocessor)
+        height_cm = float(features.get('height', 170))
+        weight_kg = float(features.get('weight', 70))
+        bmi = weight_kg / ((height_cm / 100) ** 2)
+        
+        # Create DataFrame with the 6 features the preprocessor expects
+        feature_data = {
+            'ap_hi': [float(features.get('ap_hi', 120))],
+            'ap_lo': [float(features.get('ap_lo', 80))],
+            'age_years': [age_in_years],
+            'cholesterol': [int(features.get('cholesterol', 1))],
+            'bmi': [bmi],
+            'weight': [weight_kg],
+        }
+        feature_df = pd.DataFrame(feature_data)
+        
+        print(f"📊 Prediction request - Features DataFrame:\n{feature_df}")
+        
+        # Preprocess features (preprocessor will select the 6 features it needs)
+        if preprocessor:
+            features_processed = preprocessor.transform(feature_df)
+        else:
+            features_processed = feature_df.values
+        
+        # Make prediction based on model choice
+        model_name = model_choice
+        if model_choice == 'logistic_regression' and lr_model:
+            prediction = lr_model.predict(features_processed)[0]
+            probability = lr_model.predict_proba(features_processed)[0]
+            model_name = 'Logistic Regression'
+        elif model_choice == 'rf_baseline' and rf_baseline_model:
+            prediction = rf_baseline_model.predict(features_processed)[0]
+            probability = rf_baseline_model.predict_proba(features_processed)[0]
+            model_name = 'Random Forest (Baseline)'
+        else:  # Default to RF Tuned
+            prediction = rf_tuned_model.predict(features_processed)[0]
+            probability = rf_tuned_model.predict_proba(features_processed)[0]
+            model_name = 'Random Forest (Tuned)'
+        
+        print(f"🤖 Model used: {model_name}")
+        print(f"📊 Prediction: {prediction}, Probabilities: {probability}")
+        
+        response = {
+            'prediction': int(prediction),
+            'probability': {
+                'no_disease': float(probability[0]),
+                'disease': float(probability[1])
+            },
+            'risk_level': 'High' if probability[1] > 0.7 else 'Medium' if probability[1] > 0.4 else 'Low',
+            'confidence': float(max(probability) * 100),
+            'model_used': model_name
+        }
+        
+        return jsonify(response)
+    
+    except Exception as e:
+        print(f"❌ Prediction error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/predict/batch', methods=['POST'])
+def predict_batch():
+    """
+    Make predictions on multiple samples
+    
+    Expected JSON format:
+    {
+        "samples": [
+            {"age_years": 45, "weight": 70, ...},
+            {"age_years": 50, "weight": 75, ...}
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'samples' not in data:
+            return jsonify({'error': 'Missing samples in request'}), 400
+        
+        samples = data.get('samples', [])
+        predictions = []
+        
+        for idx, features in enumerate(samples):
+            age_in_years = int(features.get('age_years', 45))
+            age_in_days = age_in_years * 365
+            
+            # Calculate BMI (required by new preprocessor)
+            height_cm = float(features.get('height', 170))
+            weight_kg = float(features.get('weight', 70))
+            bmi = weight_kg / ((height_cm / 100) ** 2)
+            
+            # Create DataFrame with the 6 features the preprocessor expects
+            feature_data = {
+                'ap_hi': [float(features.get('ap_hi', 120))],
+                'ap_lo': [float(features.get('ap_lo', 80))],
+                'age_years': [age_in_years],
+                'cholesterol': [int(features.get('cholesterol', 1))],
+                'bmi': [bmi],
+                'weight': [weight_kg],
+            }
+            feature_df = pd.DataFrame(feature_data)
+            
+            if preprocessor:
+                features_processed = preprocessor.transform(feature_df)
+            else:
+                features_processed = feature_df.values
+            
+            prediction = rf_tuned_model.predict(features_processed)[0]
+            probability = rf_tuned_model.predict_proba(features_processed)[0]
+            
+            predictions.append({
+                'prediction': int(prediction),
+                'probability': {
+                    'no_disease': float(probability[0]),
+                    'disease': float(probability[1])
+                },
+                'confidence': float(max(probability) * 100)
+            })
+        
+        return jsonify({
+            'predictions': predictions,
+            'total': len(predictions),
+            'positive_cases': sum(1 for p in predictions if p['prediction'] == 1)
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/model/metrics', methods=['GET'])
+def model_metrics():
+    """Get detailed model metrics"""
+    return jsonify({
+        'best_model': {
+            'name': 'Random Forest (Tuned)',
+            'hyperparameters': {
+                'n_estimators': 200,
+                'max_depth': 10,
+                'min_samples_split': 2
+            },
+            'metrics': {
+                'accuracy': 0.732,
+                'precision': 0.757,
+                'recall': 0.683,
+                'f1': 0.718,
+                'roc_auc': 0.798
+            },
+            'cv_stability': {
+                'mean_roc_auc': 0.7864,
+                'std': 0.0026
+            }
+        },
+        'training_info': {
+            'dataset': 'cardio_train_properly_separated_comma.csv',
+            'total_samples': 70000,
+            'train_samples': 56000,
+            'test_samples': 14000,
+            'features': 6,
+            'feature_names': ['ap_hi', 'ap_lo', 'age_years', 'cholesterol', 'bmi', 'weight'],
+            'target': 'cardio (binary classification)'
+        }
+    })
+
+
+@app.route('/api/feature/importance', methods=['GET'])
+def feature_importance():
+    """Get feature importance from the best model"""
+    try:
+        if hasattr(rf_tuned_model, 'feature_importances_'):
+            importances = rf_tuned_model.feature_importances_
+            features = ['ap_hi', 'ap_lo', 'age_years', 'cholesterol', 'bmi', 'weight']
+            
+            # Sort by importance
+            sorted_idx = np.argsort(importances)[::-1]
+            
+            return jsonify({
+                'features': [features[i] for i in sorted_idx],
+                'importance': [float(importances[i]) for i in sorted_idx],
+                'top_5': {
+                    'features': [features[i] for i in sorted_idx[:5]],
+                    'importance': [float(importances[i]) for i in sorted_idx[:5]]
+                }
+            })
+        else:
+            return jsonify({'error': 'Model does not support feature importance'}), 400
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+
+@app.errorhandler(500)
+def server_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
+
+if __name__ == '__main__':
+    print("🚀 Starting ML Cardio API Server...")
+    print("📊 Available endpoints:")
+    print("  GET  /health - Health check")
+    print("  GET  /api/models/info - Model information")
+    print("  GET  /api/model/metrics - Detailed model metrics")
+    print("  GET  /api/feature/importance - Feature importance")
+    print("  POST /api/predict - Single prediction")
+    print("  POST /api/predict/batch - Batch predictions")
+    print("\n🌐 Server running on http://localhost:5000")
+    
+    app.run(debug=True, host='0.0.0.0', port=5000)

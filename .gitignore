@@ -1,0 +1,43 @@
+# .gitignore for Project ML
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node/React
+cardio-dashboard/node_modules/
+cardio-dashboard/.next/
+
+# Artifacts
+artifacts/
+*.joblib
+
+# Jupyter
+*.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Streamlit
+streamlit_requirements.txt
+run_streamlit.bat
+
+# Misc
+*.swp
+*.bak
+
+# Exclude marks except essential docs
+marks/FINAL_FIX_ALL_MODELS.md
+marks/FIXES_APPLIED_SUMMARY.md
+marks/FIX_PREPROCESSOR_COLUMNS.md
+marks/PREDICTION_ANALYSIS.md
+marks/PREDICTION_ISSUE_ANALYSIS.md
+marks/RETRAIN_RF_MODELS_GUIDE.md
+marks/RF_MODEL_ISSUE_ANALYSIS.md
+marks/RF_TUNED_FIX_AND_MULTI_MODEL.md
