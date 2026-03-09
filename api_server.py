@@ -3,16 +3,23 @@ Flask API for ML Cardio Disease Prediction
 Serves the trained ML models for predictions
 """
 
+import logging
+import os
+from pathlib import Path
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import joblib
 import numpy as np
 import pandas as pd
-import os
-from pathlib import Path
 
 app = Flask(__name__)
-CORS(app)
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=os.environ.get('LOG_LEVEL', 'INFO').upper())
+
+allowed_origins = [origin.strip() for origin in os.environ.get('CORS_ORIGINS', '*').split(',') if origin.strip()]
+CORS(app, resources={r"/api/*": {"origins": allowed_origins}, r"/health": {"origins": allowed_origins}})
 
 # Load models and preprocessor
 BASE_DIR = Path(__file__).parent
@@ -23,29 +30,54 @@ try:
     rf_tuned_model = joblib.load(ARTIFACTS_DIR / "best_random_forest_tuned.joblib")
     rf_baseline_model = joblib.load(ARTIFACTS_DIR / "random_forest_baseline.joblib")
     lr_model = joblib.load(ARTIFACTS_DIR / "logistic_regression.joblib")
-    print("✓ All models loaded successfully")
-    print(f"  - RF Tuned: {type(rf_tuned_model)}")
-    print(f"  - RF Baseline: {type(rf_baseline_model)}")
-    print(f"  - Logistic Regression: {type(lr_model)}")
+    logger.info("All models loaded successfully")
 except FileNotFoundError as e:
-    print(f"⚠ Error loading models: {e}")
+    logger.exception("Error loading models: %s", e)
     preprocessor = None
     rf_tuned_model = None
     rf_baseline_model = None
     lr_model = None
 
 
+def models_available():
+    return all(model is not None for model in (preprocessor, rf_tuned_model, rf_baseline_model, lr_model))
+
+
+def validate_feature_ranges(features):
+    age_years = int(features.get('age_years', 45))
+    height_cm = float(features.get('height', 170))
+    weight_kg = float(features.get('weight', 70))
+    ap_hi = float(features.get('ap_hi', 120))
+    ap_lo = float(features.get('ap_lo', 80))
+    cholesterol = int(features.get('cholesterol', 1))
+
+    if not 1 <= age_years <= 120:
+        raise ValueError('age_years must be between 1 and 120')
+    if not 50 <= height_cm <= 250:
+        raise ValueError('height must be between 50 and 250 cm')
+    if not 10 <= weight_kg <= 300:
+        raise ValueError('weight must be between 10 and 300 kg')
+    if not 50 <= ap_hi <= 300:
+        raise ValueError('ap_hi must be between 50 and 300')
+    if not 30 <= ap_lo <= 200:
+        raise ValueError('ap_lo must be between 30 and 200')
+    if ap_hi <= ap_lo:
+        raise ValueError('ap_hi must be greater than ap_lo')
+    if cholesterol not in (1, 2, 3):
+        raise ValueError('cholesterol must be 1, 2, or 3')
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({
-        'status': 'healthy',
+        'status': 'healthy' if models_available() else 'degraded',
         'models_loaded': {
             'rf_tuned': rf_tuned_model is not None,
             'rf_baseline': rf_baseline_model is not None,
             'logistic_regression': lr_model is not None
         }
-    })
+    }), 200 if models_available() else 503
 
 
 @app.route('/api/models/info', methods=['GET'])
@@ -138,15 +170,18 @@ def predict():
         
         if not data or 'features' not in data:
             return jsonify({'error': 'Missing features in request'}), 400
+
+        if not models_available():
+            return jsonify({'error': 'Models are not available on the server'}), 503
         
         # Extract features
         features = data.get('features')
         model_choice = data.get('model', 'random_forest')
+        validate_feature_ranges(features)
         
         # Define feature columns in the correct order (matching training data)
         # Note: New preprocessor expects BMI as an input feature
         age_in_years = int(features.get('age_years', 45))
-        age_in_days = age_in_years * 365  # Convert back to days as preprocessor expects
         
         # Calculate BMI (required by new preprocessor)
         height_cm = float(features.get('height', 170))
@@ -164,13 +199,8 @@ def predict():
         }
         feature_df = pd.DataFrame(feature_data)
         
-        print(f"📊 Prediction request - Features DataFrame:\n{feature_df}")
-        
         # Preprocess features (preprocessor will select the 6 features it needs)
-        if preprocessor:
-            features_processed = preprocessor.transform(feature_df)
-        else:
-            features_processed = feature_df.values
+        features_processed = preprocessor.transform(feature_df)
         
         # Make prediction based on model choice
         model_name = model_choice
@@ -187,9 +217,6 @@ def predict():
             probability = rf_tuned_model.predict_proba(features_processed)[0]
             model_name = 'Random Forest (Tuned)'
         
-        print(f"🤖 Model used: {model_name}")
-        print(f"📊 Prediction: {prediction}, Probabilities: {probability}")
-        
         response = {
             'prediction': int(prediction),
             'probability': {
@@ -202,11 +229,11 @@ def predict():
         }
         
         return jsonify(response)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     
     except Exception as e:
-        print(f"❌ Prediction error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("Prediction error")
         return jsonify({'error': str(e)}), 500
 
 
@@ -228,13 +255,16 @@ def predict_batch():
         
         if not data or 'samples' not in data:
             return jsonify({'error': 'Missing samples in request'}), 400
+
+        if not models_available():
+            return jsonify({'error': 'Models are not available on the server'}), 503
         
         samples = data.get('samples', [])
         predictions = []
         
         for idx, features in enumerate(samples):
+            validate_feature_ranges(features)
             age_in_years = int(features.get('age_years', 45))
-            age_in_days = age_in_years * 365
             
             # Calculate BMI (required by new preprocessor)
             height_cm = float(features.get('height', 170))
@@ -274,8 +304,11 @@ def predict_batch():
             'total': len(predictions),
             'positive_cases': sum(1 for p in predictions if p['prediction'] == 1)
         })
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     
     except Exception as e:
+        logger.exception("Batch prediction error")
         return jsonify({'error': str(e)}), 500
 
 
@@ -351,14 +384,6 @@ def server_error(error):
 
 
 if __name__ == '__main__':
-    print("🚀 Starting ML Cardio API Server...")
-    print("📊 Available endpoints:")
-    print("  GET  /health - Health check")
-    print("  GET  /api/models/info - Model information")
-    print("  GET  /api/model/metrics - Detailed model metrics")
-    print("  GET  /api/feature/importance - Feature importance")
-    print("  POST /api/predict - Single prediction")
-    print("  POST /api/predict/batch - Batch predictions")
-    print("\n🌐 Server running on http://localhost:5000")
-    
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    logger.info("Starting ML Cardio API Server on port %s", port)
+    app.run(debug=False, host='0.0.0.0', port=port)

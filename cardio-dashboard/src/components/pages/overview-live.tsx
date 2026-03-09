@@ -2,15 +2,18 @@
 
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { TrendingUp, Activity, Brain, AlertCircle, Check, Loader } from 'lucide-react'
+import { apiUrl, dashboardApiUnavailableMessage } from '@/lib/api'
 
-const modelMetrics = [
-  { name: 'Logistic Regression', accuracy: 0.724, auc: 0.786 },
-  { name: 'RF Baseline', accuracy: 0.721, auc: 0.783 },
-  { name: 'RF Tuned', accuracy: 0.732, auc: 0.798 },
-]
+interface ModelInfo {
+  name: string
+  accuracy: number
+  precision: number
+  recall: number
+  f1: number
+  roc_auc: number
+}
 
 const confusionData = [
   { category: 'True Negative', value: 5470, fill: '#3b82f6' },
@@ -28,7 +31,7 @@ const performanceData = [
 ]
 
 export default function Overview() {
-  const [modelsInfo, setModelsInfo] = useState<any[]>([])
+  const [modelsInfo, setModelsInfo] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -37,7 +40,7 @@ export default function Overview() {
 
   const fetchModelsInfo = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/models/info')
+      const response = await fetch(apiUrl('/api/models/info'))
       const data = await response.json()
       setModelsInfo(data.models)
     } catch (error) {
@@ -215,7 +218,7 @@ export default function Overview() {
               ) : (
                 <div className="col-span-3 text-center text-slate-500 p-8">
                   <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>Could not fetch model information. Ensure the API server is running on localhost:5000</p>
+                  <p>{dashboardApiUnavailableMessage}</p>
                 </div>
               )}
             </div>

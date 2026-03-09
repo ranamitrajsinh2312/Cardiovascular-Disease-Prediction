@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: cardio-api
+    env: python
+    buildCommand: pip install -r streamlit_requirements.txt
+    startCommand: gunicorn api_server:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: PYTHON_VERSION
+        value: 3.10.13
+      - key: CORS_ORIGINS
+        value: https://cardio-dashboard.onrender.com
+    autoDeploy: true
+
+  - type: web
+    name: cardio-dashboard
+    env: node
+    rootDir: cardio-dashboard
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.11.1
+      - key: NEXT_PUBLIC_API_URL
+        value: https://cardio-api.onrender.com
+    autoDeploy: true
