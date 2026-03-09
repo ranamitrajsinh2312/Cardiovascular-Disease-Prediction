@@ -10,24 +10,31 @@
 - `streamlit_requirements.txt` — Python dependencies
 - `Dockerfile` — Container setup for the Python API
 - `Procfile` — Gunicorn entrypoint for the Python API
-- `render.yaml` — Render blueprint for both API and Next.js dashboard
+- `render.yaml` — Render blueprint for the Python API
 
-## Render Deployment
+## Recommended Deployment
 
-This repository is now structured as a two-service Render deployment:
+Use this split setup:
 
 1. `cardio-api`: Flask API serving the trained models.
-2. `cardio-dashboard`: Next.js frontend that calls the API with `NEXT_PUBLIC_API_URL`.
+2. `cardio-dashboard`: Next.js frontend deployed on Vercel.
 
-### One-click setup with `render.yaml`
+### Backend on Render
 
 1. Push the latest code to GitHub.
 2. In Render, create a new Blueprint instance from the repository.
-3. Render will detect both services from `render.yaml`.
-4. After the services are created, confirm the actual frontend URL and backend URL.
-5. If Render assigns different service hostnames than the defaults in `render.yaml`, update these variables:
-  - `CORS_ORIGINS` on `cardio-api`
-  - `NEXT_PUBLIC_API_URL` on `cardio-dashboard`
+3. Render will detect the `cardio-api` service from `render.yaml`.
+4. After the API is live, copy its public URL.
+5. Update `CORS_ORIGINS` on Render to match your real Vercel frontend URL.
+
+### Frontend on Vercel
+
+1. Import the same GitHub repository into Vercel.
+2. Set the project root directory to `cardio-dashboard`.
+3. Add this environment variable in Vercel:
+  - `NEXT_PUBLIC_API_URL=https://your-render-api.onrender.com`
+4. Deploy the project.
+5. After Vercel gives you the live URL, set that URL in the Render `CORS_ORIGINS` variable and redeploy the API.
 
 ## Local Development
 
@@ -57,6 +64,7 @@ This repository is now structured as a two-service Render deployment:
 - The dashboard reads its backend base URL from `NEXT_PUBLIC_API_URL`.
 - Set `NEXT_PUBLIC_API_URL=http://localhost:5000` for local development.
 - Set `NEXT_PUBLIC_API_URL=https://your-api-service.onrender.com` in production.
+- In Vercel, set the root directory to `cardio-dashboard`.
 
 ---
 

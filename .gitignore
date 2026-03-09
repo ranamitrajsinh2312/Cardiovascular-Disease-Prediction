@@ -9,6 +9,7 @@ __pycache__/
 # Node/React
 cardio-dashboard/node_modules/
 cardio-dashboard/.next/
+cardio-dashboard/.vercel/
 
 # Artifacts
 artifacts/
