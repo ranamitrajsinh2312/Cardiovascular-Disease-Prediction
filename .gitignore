@@ -25,7 +25,6 @@ Thumbs.db
 *.log
 
 # Streamlit
-streamlit_requirements.txt
 run_streamlit.bat
 
 # Misc
