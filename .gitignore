@@ -18,6 +18,10 @@ artifacts/
 !artifacts/best_random_forest_tuned.joblib
 !artifacts/logistic_regression.joblib
 !artifacts/preprocessor.joblib
+!cardio-dashboard/artifacts/
+!cardio-dashboard/artifacts/best_random_forest_tuned.joblib
+!cardio-dashboard/artifacts/logistic_regression.joblib
+!cardio-dashboard/artifacts/preprocessor.joblib
 
 # Jupyter
 *.ipynb_checkpoints
