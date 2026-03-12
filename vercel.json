@@ -3,7 +3,14 @@
   "builds": [
     {
       "src": "api_server.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "artifacts/best_random_forest_tuned.joblib",
+          "artifacts/logistic_regression.joblib",
+          "artifacts/preprocessor.joblib"
+        ]
+      }
     }
   ],
   "routes": [
@@ -11,10 +18,5 @@
       "src": "/(.*)",
       "dest": "api_server.py"
     }
-  ],
-  "functions": {
-    "api_server.py": {
-      "includeFiles": "artifacts/*.joblib"
-    }
-  }
+  ]
 }

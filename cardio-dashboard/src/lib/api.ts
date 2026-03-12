@@ -1,4 +1,8 @@
-const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').replace(/\/$/, '')
+const defaultApiBaseUrl = process.env.NODE_ENV === 'production'
+  ? 'https://cardiovascular-prediction-api.vercel.app'
+  : 'http://localhost:5000'
+
+const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL?.trim() || defaultApiBaseUrl).replace(/\/$/, '')
 
 export function apiUrl(path: string) {
   if (!path.startsWith('/')) {
