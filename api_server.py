@@ -25,22 +25,28 @@ CORS(app, resources={r"/api/*": {"origins": allowed_origins}, r"/health": {"orig
 BASE_DIR = Path(__file__).parent
 ARTIFACTS_DIR = BASE_DIR / "artifacts"
 
-try:
-    preprocessor = joblib.load(ARTIFACTS_DIR / "preprocessor.joblib")
-    rf_tuned_model = joblib.load(ARTIFACTS_DIR / "best_random_forest_tuned.joblib")
-    rf_baseline_model = joblib.load(ARTIFACTS_DIR / "random_forest_baseline.joblib")
-    lr_model = joblib.load(ARTIFACTS_DIR / "logistic_regression.joblib")
-    logger.info("All models loaded successfully")
-except FileNotFoundError as e:
-    logger.exception("Error loading models: %s", e)
-    preprocessor = None
-    rf_tuned_model = None
-    rf_baseline_model = None
-    lr_model = None
+def load_artifact(filename, required=True):
+    artifact_path = ARTIFACTS_DIR / filename
+    try:
+        model = joblib.load(artifact_path)
+        logger.info("Loaded artifact: %s", filename)
+        return model
+    except FileNotFoundError:
+        if required:
+            logger.exception("Required artifact is missing: %s", filename)
+        else:
+            logger.warning("Optional artifact is missing: %s", filename)
+        return None
+
+
+preprocessor = load_artifact("preprocessor.joblib")
+rf_tuned_model = load_artifact("best_random_forest_tuned.joblib")
+rf_baseline_model = load_artifact("random_forest_baseline.joblib", required=False)
+lr_model = load_artifact("logistic_regression.joblib")
 
 
 def models_available():
-    return all(model is not None for model in (preprocessor, rf_tuned_model, rf_baseline_model, lr_model))
+    return all(model is not None for model in (preprocessor, rf_tuned_model, lr_model))
 
 
 def validate_feature_ranges(features):
@@ -103,7 +109,8 @@ def model_info():
                 'precision': 0.732,
                 'recall': 0.697,
                 'f1': 0.714,
-                'description': 'Baseline Random Forest with default parameters'
+                'description': 'Baseline Random Forest with default parameters',
+                'available': rf_baseline_model is not None
             },
             {
                 'id': 'logistic_regression',
@@ -113,7 +120,8 @@ def model_info():
                 'precision': 0.746,
                 'recall': 0.678,
                 'f1': 0.711,
-                'description': 'Fast and interpretable linear model'
+                'description': 'Fast and interpretable linear model',
+                'available': lr_model is not None
             }
         ]
     })

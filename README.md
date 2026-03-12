@@ -19,6 +19,17 @@ Use this split setup:
 1. `cardio-api`: Flask API serving the trained models.
 2. `cardio-dashboard`: Next.js frontend deployed on Vercel.
 
+### Backend on Vercel
+
+1. Push the latest code to GitHub.
+2. Import the repository into Vercel.
+3. Set the project root to the repository root.
+4. Vercel will use `vercel.json`, `requirements.txt`, and `api_server.py`.
+5. After the API is live, copy its public URL.
+6. Set `CORS_ORIGINS` in the Vercel project to your frontend URL.
+
+Note: The Vercel deployment includes the tuned model, logistic regression model, and preprocessor. The oversized baseline Random Forest artifact is treated as optional there.
+
 ### Backend on Render
 
 1. Push the latest code to GitHub.
