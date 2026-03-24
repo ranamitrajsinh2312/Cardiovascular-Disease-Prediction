@@ -73,7 +73,12 @@ st.markdown("""
 # Load models
 @st.cache_resource
 def load_models():
-    """Load the trained models and preprocessor"""
+    """Load the trained models and preprocessor.
+
+    Includes a small compatibility shim for older LogisticRegression
+    artifacts that might be missing the ``multi_class`` attribute when
+    loaded with a newer scikit-learn version.
+    """
     base_dir = Path(__file__).parent
     artifacts_dir = base_dir / "artifacts"
     
@@ -81,6 +86,21 @@ def load_models():
         preprocessor = joblib.load(artifacts_dir / "preprocessor.joblib")
         rf_model = joblib.load(artifacts_dir / "best_random_forest_tuned.joblib")
         lr_model = joblib.load(artifacts_dir / "logistic_regression.joblib")
+
+        # Patch legacy LogisticRegression models if needed
+        try:
+            from sklearn.linear_model import LogisticRegression  # type: ignore
+
+            if isinstance(lr_model, LogisticRegression) and not hasattr(lr_model, "multi_class"):
+                try:
+                    default_multi_class = LogisticRegression().multi_class
+                except Exception:
+                    default_multi_class = "ovr"
+                setattr(lr_model, "multi_class", default_multi_class)
+        except Exception:
+            # If scikit-learn is not available or anything goes wrong,
+            # continue without patching and let Streamlit surface errors.
+            pass
         
         return {
             'preprocessor': preprocessor,

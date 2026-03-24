@@ -25,6 +25,7 @@ CORS(app, resources={r"/api/*": {"origins": allowed_origins}, r"/health": {"orig
 BASE_DIR = Path(__file__).parent
 ARTIFACTS_DIR = BASE_DIR / "artifacts"
 
+
 def load_artifact(filename, required=True):
     artifact_path = ARTIFACTS_DIR / filename
     try:
@@ -39,10 +40,42 @@ def load_artifact(filename, required=True):
         return None
 
 
+def _patch_logistic_regression(model):
+    """Ensure legacy LogisticRegression models have required attributes.
+
+    Older scikit-learn versions sometimes saved LogisticRegression without
+    the ``multi_class`` attribute. Newer versions expect it during
+    ``predict``/``predict_proba``, which can raise an AttributeError.
+    This helper adds a sensible default when missing so existing
+    artifacts keep working.
+    """
+    if model is None:
+        return None
+
+    # Avoid importing scikit-learn if it's not installed or model isn't LR
+    try:
+        from sklearn.linear_model import LogisticRegression  # type: ignore
+    except Exception:
+        return model
+
+    if isinstance(model, LogisticRegression) and not hasattr(model, "multi_class"):
+        try:
+            default_multi_class = LogisticRegression().multi_class
+        except Exception:
+            default_multi_class = "ovr"
+        setattr(model, "multi_class", default_multi_class)
+        logger.warning(
+            "Patched LogisticRegression model: added missing 'multi_class' attribute (set to %s)",
+            default_multi_class,
+        )
+
+    return model
+
+
 preprocessor = load_artifact("preprocessor.joblib")
 rf_tuned_model = load_artifact("best_random_forest_tuned.joblib")
 rf_baseline_model = load_artifact("random_forest_baseline.joblib", required=False)
-lr_model = load_artifact("logistic_regression.joblib")
+lr_model = _patch_logistic_regression(load_artifact("logistic_regression.joblib"))
 
 
 def models_available():

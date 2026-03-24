@@ -30,10 +30,39 @@ def load_artifact(filename, required=True):
         return None
 
 
+def _patch_logistic_regression(model):
+    """Ensure legacy LogisticRegression models have required attributes.
+
+    Matches the compatibility fix used in the main api_server so that
+    existing logistic_regression.joblib artifacts continue working even
+    if they were trained with an older scikit-learn version.
+    """
+    if model is None:
+        return None
+
+    try:
+        from sklearn.linear_model import LogisticRegression  # type: ignore
+    except Exception:
+        return model
+
+    if isinstance(model, LogisticRegression) and not hasattr(model, 'multi_class'):
+        try:
+            default_multi_class = LogisticRegression().multi_class
+        except Exception:
+            default_multi_class = 'ovr'
+        setattr(model, 'multi_class', default_multi_class)
+        logger.warning(
+            "Patched LogisticRegression model: added missing 'multi_class' attribute (set to %s)",
+            default_multi_class,
+        )
+
+    return model
+
+
 preprocessor = load_artifact('preprocessor.joblib')
 rf_tuned_model = load_artifact('best_random_forest_tuned.joblib')
 rf_baseline_model = load_artifact('random_forest_baseline.joblib', required=False)
-lr_model = load_artifact('logistic_regression.joblib')
+lr_model = _patch_logistic_regression(load_artifact('logistic_regression.joblib'))
 
 
 def models_available():
