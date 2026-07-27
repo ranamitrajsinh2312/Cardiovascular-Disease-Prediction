@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: cardio-api
+    env: python
+    buildCommand: pip install -r streamlit_requirements.txt
+    startCommand: gunicorn api_server:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: PYTHON_VERSION
+        value: 3.10.13
+      - key: CORS_ORIGINS
+        value: https://your-vercel-project.vercel.app
+    autoDeploy: true
